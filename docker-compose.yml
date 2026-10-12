@@ -3,7 +3,7 @@ services:
     image: vinaikumarp/mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root_password_change_me}
       MYSQL_DATABASE: deployment_tracker
       MYSQL_USER: tracker_user
       MYSQL_PASSWORD: ${DB_PASSWORD:-local_tracker_password_change_me}
@@ -27,7 +27,7 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: tracker_user
-      DB_PASSWORD: ${DB_PASSWORD:-dbroot123}
+      DB_PASSWORD: ${DB_PASSWORD:-local_tracker_password_change_me}
       DB_NAME: deployment_tracker
       TRACKER_API_KEY: ${TRACKER_API_KEY:-local_demo_key_change_me}
     deploy:
