@@ -1,1 +1,832 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DevOps Deployment Tracker app</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand"><b>↗</b><div><strong>DeployTrack</strong><small>DEVOPS DEPLOYMENT TRACKER</small></div></div><span>● API dashboard</span></header><main><section class="intro"><div><p>RELEASE OPERATIONS</p><h1>Deployment overview</h1><small>Track builds, environments and release outcomes.</small></div><button id="new">＋ Record deployment</button></section><section class="stats"><article>Total deployments<strong id="total">—</strong></article><article>Successful<strong id="success">—</strong></article><article>Failed<strong id="failed">—</strong></article><article>In progress<strong id="progress">—</strong></article></section><section class="panel"><div class="panelhead"><div><h2>Deployment history</h2><small>Recent application releases</small></div><button class="secondary" id="refresh">Refresh ↻</button></div><div class="filters"><input id="search" placeholder="Search project name"><select id="sf"><option value="">All statuses</option><option>SUCCESS</option><option>FAILED</option><option>IN_PROGRESS</option><option>ROLLED_BACK</option></select><select id="ef"><option value="">All environments</option><option>Development</option><option>Testing</option><option>Production</option></select></div><p id="notice"></p><div class="tablewrap"><table><thead><tr><th>APPLICATION</th><th>BUILD</th><th>ENVIRONMENT</th><th>STATUS</th><th>DEPLOYED BY</th><th>STARTED</th><th>ACTIONS</th></tr></thead><tbody id="rows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></section><footer>Node.js · Express · MySQL · Docker · Jenkins</footer></main><dialog id="dlg"><form id="form"><div class="dialoghead"><h2 id="formtitle">Record deployment</h2><button type="button" id="close" class="secondary">×</button></div><input id="id" type="hidden"><label>Project name<input id="project" required placeholder="payment-service"></label><div class="two"><label>Version<input id="version" required placeholder="v1.0.0"></label><label>Build number<input id="build" required placeholder="42"></label></div><div class="two"><label>Environment<select id="env"><option>Development</option><option>Testing</option><option>Production</option></select></label><label>Status<select id="status"><option>SUCCESS</option><option>IN_PROGRESS</option><option>FAILED</option><option>ROLLED_BACK</option></select></label></div><label>Deployed by<input id="by" value="manual"></label><label>Docker image tag<input id="image" placeholder="user/app:42"></label><label>Git commit ID<input id="commit" placeholder="abc1234"></label><label>Logs / notes<textarea id="logs" rows="3"></textarea></label><p class="error" id="error"></p><div class="actions"><button type="button" class="secondary" id="cancel">Cancel</button><button type="submit">Save deployment</button></div></form></dialog><script src="/script.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeployTrack | DevOps Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #121a2d;
+      --card2: #172139;
+      --border: #27334e;
+      --text: #edf2ff;
+      --muted: #8c9bb9;
+      --blue: #7895ff;
+      --purple: #a18aff;
+      --green: #42d6a0;
+      --red: #ff7187;
+      --orange: #ffc56d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(ellipse at top right, #202451 0%, transparent 35%),
+        var(--bg);
+      color: var(--text);
+      font-family: "DM Sans", sans-serif;
+    }
+
+    button, input, select, textarea { font: inherit; }
+
+    button {
+      cursor: pointer;
+      transition: .2s ease;
+    }
+
+    header {
+      height: 76px;
+      padding: 0 5%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11,16,32,.9);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(16px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 13px;
+      font-size: 25px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6689ff, #a16bff);
+      box-shadow: 0 6px 24px #7188ff40;
+    }
+
+    .brand strong {
+      display: block;
+      font: 700 21px "Space Grotesk", sans-serif;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: 1.8px;
+    }
+
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #b9c5dc;
+      font-size: 12px;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px #42d6a0;
+    }
+
+    main {
+      width: min(1450px, 100%);
+      margin: auto;
+      padding: 38px 5% 24px;
+    }
+
+    .intro {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      color: #77dce8;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font: 700 clamp(27px, 3vw, 37px) "Space Grotesk", sans-serif;
+      letter-spacing: -1px;
+      margin: 0 0 8px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0;
+    }
+
+    .primary, #new {
+      color: white;
+      background: linear-gradient(110deg, #6689ff, #966bff);
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 18px;
+      font-weight: 700;
+      box-shadow: 0 7px 24px #7188ff30;
+    }
+
+    .primary:hover, #new:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.12);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 25px;
+    }
+
+    .stat {
+      padding: 21px;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: linear-gradient(145deg, #172139, #11182a);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat::after {
+      content: "";
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      right: -40px;
+      top: -45px;
+      background: var(--glow, #7895ff15);
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat-icon {
+      float: right;
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--icon-bg, #7895ff19);
+      color: var(--icon-color, var(--blue));
+      font-size: 17px;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 16px;
+      font: 700 32px "Space Grotesk", sans-serif;
+    }
+
+    .stat-note {
+      margin-top: 5px;
+      color: #7585a5;
+      font-size: 11px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: rgba(18,26,45,.95);
+      overflow: hidden;
+      box-shadow: 0 15px 40px #00000015;
+    }
+
+    .panel-head {
+      padding: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+    }
+
+    h2, h3 { font-family: "Space Grotesk", sans-serif; }
+
+    .panel-head h2 {
+      font-size: 18px;
+      margin: 0 0 5px;
+    }
+
+    .panel-head small {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .secondary {
+      color: #c6d2e9;
+      background: #1a2540;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 10px 13px;
+    }
+
+    .secondary:hover { background: #25324e; }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 0 22px 19px;
+    }
+
+    .search-box { flex: 1 1 180px; }
+
+    .filters input, .filters select,
+    label input, label select, label textarea {
+      width: 100%;
+      min-width: 0;
+      padding: 11px 12px;
+      color: var(--text);
+      background: #0d1426;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+    }
+
+    .filters input:focus, .filters select:focus,
+    label input:focus, label select:focus, label textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px #7895ff18;
+    }
+
+    .filters select { flex: 0 1 160px; }
+
+    #notice {
+      color: var(--muted);
+      font-size: 12px;
+      margin: 0 22px 12px;
+    }
+
+    .tablewrap {
+      width: 100%;
+      overflow-x: auto;
+      border-top: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    thead { background: #172139; }
+
+    th {
+      padding: 14px 15px;
+      color: #8292b1;
+      font-size: 9px;
+      letter-spacing: 1px;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 15px;
+      border-top: 1px solid #27334e80;
+      color: #dce5f8;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    tbody tr { transition: background .2s; }
+    tbody tr:hover { background: #7895ff09; }
+
+    .app-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .app-icon {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      color: #a9baff;
+      background: #7895ff18;
+      border: 1px solid #7895ff30;
+      font-weight: 700;
+    }
+
+    .app-name { font-weight: 700; color: #f0f3ff; }
+    .app-meta, .build-meta {
+      color: #7889a9;
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    .env-tag {
+      display: inline-block;
+      padding: 6px 8px;
+      border: 1px solid #2c3957;
+      border-radius: 7px;
+      background: #19243c;
+      color: #c3cee4;
+      font-size: 10px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: 7px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .status::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-success {
+      color: var(--green);
+      background: #42d6a015;
+      border: 1px solid #42d6a030;
+    }
+
+    .status-failed {
+      color: var(--red);
+      background: #ff718715;
+      border: 1px solid #ff718730;
+    }
+
+    .status-progress {
+      color: var(--orange);
+      background: #ffc56d15;
+      border: 1px solid #ffc56d30;
+    }
+
+    .status-rolled {
+      color: var(--purple);
+      background: #a18aff15;
+      border: 1px solid #a18aff30;
+    }
+
+    .side-stack { display: grid; gap: 18px; }
+    .side-panel { padding: 20px; }
+
+    .side-panel h3 {
+      margin: 0 0 17px;
+      font-size: 15px;
+    }
+
+    .side-caption {
+      color: var(--muted);
+      font-size: 10px;
+      float: right;
+      font-family: "DM Sans", sans-serif;
+      font-weight: 400;
+    }
+
+    .health-row {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .health-ring {
+      width: 88px;
+      height: 88px;
+      flex: 0 0 88px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at center, #121a2d 57%, transparent 59%),
+        conic-gradient(#53d8e8 0 35%, #788cff 35% 87%, #29334c 87% 100%);
+    }
+
+    .health-ring strong {
+      font: 700 22px "Space Grotesk", sans-serif;
+    }
+
+    .health-ring small {
+      display: block;
+      font: 10px "DM Sans", sans-serif;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .health-copy strong { font-size: 12px; }
+    .health-copy p {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      margin: 7px 0 0;
+    }
+
+    .pipeline-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 0;
+      border-bottom: 1px solid #27334e80;
+    }
+
+    .pipeline-item:last-child { border-bottom: 0; padding-bottom: 0; }
+
+    .pipeline-icon {
+      width: 29px;
+      height: 29px;
+      flex: 0 0 29px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: var(--green);
+      background: #42d6a015;
+    }
+
+    .pipeline-icon.running {
+      color: var(--orange);
+      background: #ffc56d15;
+    }
+
+    .pipeline-icon.waiting {
+      color: #94a1bd;
+      background: #27334e;
+    }
+
+    .pipeline-copy { flex: 1; }
+    .pipeline-copy strong { display: block; font-size: 11px; }
+    .pipeline-copy small {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    .pipeline-state { color: var(--muted); font-size: 10px; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 25px 0 5px;
+      color: #697895;
+      font-size: 11px;
+    }
+
+    /* Record deployment modal */
+    dialog {
+      width: min(560px, calc(100% - 28px));
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 0;
+      color: var(--text);
+      background: #121a2d;
+      border: 1px solid #34415f;
+      border-radius: 17px;
+      box-shadow: 0 25px 90px #0009;
+    }
+
+    dialog::backdrop {
+      background: #030716c9;
+      backdrop-filter: blur(5px);
+    }
+
+    #form { padding: 24px; display: grid; gap: 14px; }
+
+    .dialoghead {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+
+    .dialoghead h2 { font-size: 21px; margin: 0; }
+
+    #close { font-size: 20px; padding: 5px 10px; }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: #bdc9df;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    label textarea { resize: vertical; }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .error { color: var(--red); font-size: 12px; margin: 0; }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 5px;
+    }
+
+    @media (max-width: 1100px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 700px) {
+      header { padding: 0 18px; }
+      main { padding: 27px 16px; }
+      .intro { align-items: flex-start; flex-direction: column; }
+      #new { width: 100%; justify-content: center; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .stat { padding: 15px; }
+      .stat strong { font-size: 27px; }
+      .side-stack { grid-template-columns: 1fr; }
+      .panel-head { padding: 18px 15px; }
+      .filters { padding: 0 15px 16px; }
+      .filters select { flex: 1 1 125px; }
+      #notice { margin-left: 15px; }
+      footer { flex-direction: column; }
+      .api-status { font-size: 0; }
+      .two { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 390px) {
+      .brand strong { font-size: 17px; }
+      .brand small { font-size: 8px; letter-spacing: 1px; }
+      .brand-mark { width: 35px; height: 35px; }
+      .stat { padding: 12px; }
+      .stat-label { font-size: 10px; }
+      .stat-icon { width: 28px; height: 28px; }
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="brand">
+    <div class="brand-mark">↗</div>
+    <div>
+      <strong>DeployTrack</strong>
+      <small>DEVOPS DEPLOYMENT TRACKER</small>
+    </div>
+  </div>
+  <div class="api-status"><span class="live-dot"></span> API dashboard</div>
+</header>
+
+<main>
+  <section class="intro">
+    <div>
+      <p class="eyebrow">RELEASE OPERATIONS / OVERVIEW</p>
+      <h1>Deployment Overview</h1>
+      <p class="subtitle">Track builds, environments and release outcomes in one place.</p>
+    </div>
+    <button id="new">＋ Record deployment</button>
+  </section>
+
+  <section class="stats">
+    <article class="stat" style="--glow:#7895ff18">
+      <span class="stat-icon">▤</span>
+      <span class="stat-label">Total deployments</span>
+      <strong id="total">—</strong>
+      <div class="stat-note">All recorded releases</div>
+    </article>
+
+    <article class="stat" style="--glow:#42d6a015;--icon-bg:#42d6a015;--icon-color:#42d6a0">
+      <span class="stat-icon">✓</span>
+      <span class="stat-label">Successful</span>
+      <strong id="success">—</strong>
+      <div class="stat-note">Healthy deployments</div>
+    </article>
+
+    <article class="stat" style="--glow:#ff718715;--icon-bg:#ff718715;--icon-color:#ff7187">
+      <span class="stat-icon">!</span>
+      <span class="stat-label">Failed</span>
+      <strong id="failed">—</strong>
+      <div class="stat-note">Require investigation</div>
+    </article>
+
+    <article class="stat" style="--glow:#ffc56d15;--icon-bg:#ffc56d15;--icon-color:#ffc56d">
+      <span class="stat-icon">◷</span>
+      <span class="stat-label">In progress</span>
+      <strong id="progress">—</strong>
+      <div class="stat-note">Currently running</div>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Deployment history</h2>
+          <small>Recent application releases and build activity</small>
+        </div>
+        <button class="secondary" id="refresh">↻ Refresh</button>
+      </div>
+
+      <div class="filters">
+        <div class="search-box">
+          <input id="search" placeholder="⌕  Search project name">
+        </div>
+
+        <select id="sf">
+          <option value="">All statuses</option>
+          <option>SUCCESS</option>
+          <option>FAILED</option>
+          <option>IN_PROGRESS</option>
+          <option>ROLLED_BACK</option>
+        </select>
+
+        <select id="ef">
+          <option value="">All environments</option>
+          <option>Development</option>
+          <option>Testing</option>
+          <option>Production</option>
+        </select>
+      </div>
+
+      <p id="notice" role="status" aria-live="polite"></p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>APPLICATION</th>
+              <th>BUILD</th>
+              <th>ENVIRONMENT</th>
+              <th>STATUS</th>
+              <th>DEPLOYED BY</th>
+              <th>STARTED</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7">Loading deployments…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="side-stack">
+      <section class="panel side-panel">
+        <h3>Release health <span class="side-caption">QUALITY</span></h3>
+        <div class="health-row">
+          <div class="health-ring">
+            <div><strong>87%</strong><small>success rate</small></div>
+          </div>
+          <div class="health-copy">
+            <strong>Looking good</strong>
+            <p>Monitor failed builds and keep your releases healthy.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel side-panel">
+        <h3>Pipeline activity <span class="side-caption">LATEST RUN</span></h3>
+
+        <div class="pipeline-item">
+          <span class="pipeline-icon">✓</span>
+          <div class="pipeline-copy">
+            <strong>Build source</strong>
+            <small>Compile and package</small>
+          </div>
+          <span class="pipeline-state">Passed</span>
+        </div>
+
+        <div class="pipeline-item">
+          <span class="pipeline-icon">✓</span>
+          <div class="pipeline-copy">
+            <strong>Automated tests</strong>
+            <small>Unit test suite</small>
+          </div>
+          <span class="pipeline-state">Passed</span>
+        </div>
+
+        <div class="pipeline-item">
+          <span class="pipeline-icon running">◷</span>
+          <div class="pipeline-copy">
+            <strong>Security scan</strong>
+            <small>Image vulnerability scan</small>
+          </div>
+          <span class="pipeline-state">Running</span>
+        </div>
+
+        <div class="pipeline-item">
+          <span class="pipeline-icon waiting">↗</span>
+          <div class="pipeline-copy">
+            <strong>Deploy release</strong>
+            <small>Production environment</small>
+          </div>
+          <span class="pipeline-state">Waiting</span>
+        </div>
+      </section>
+    </aside>
+  </section>
+
+  <footer>
+    <span>© 2026 DeployTrack · Release operations</span>
+    <span>Node.js · Express · MySQL · Docker · Jenkins</span>
+  </footer>
+</main>
+
+<dialog id="dlg">
+  <form id="form">
+    <div class="dialoghead">
+      <h2 id="formtitle">Record deployment</h2>
+      <button type="button" id="close" class="secondary">×</button>
+    </div>
+
+    <input id="id" type="hidden">
+
+    <label>Project name
+      <input id="project" required placeholder="payment-service">
+    </label>
+
+    <div class="two">
+      <label>Version
+        <input id="version" required placeholder="v1.0.0">
+      </label>
+      <label>Build number
+        <input id="build" required placeholder="42">
+      </label>
+    </div>
+
+    <div class="two">
+      <label>Environment
+        <select id="env">
+          <option>Development</option>
+          <option>Testing</option>
+          <option>Production</option>
+        </select>
+      </label>
+
+      <label>Status
+        <select id="status">
+          <option>SUCCESS</option>
+          <option>IN_PROGRESS</option>
+          <option>FAILED</option>
+          <option>ROLLED_BACK</option>
+        </select>
+      </label>
+    </div>
+
+    <label>Deployed by
+      <input id="by" value="manual">
+    </label>
+
+    <label>Docker image tag
+      <input id="image" placeholder="user/app:42">
+    </label>
+
+    <label>Git commit ID
+      <input id="commit" placeholder="abc1234">
+    </label>
+
+    <label>Logs / notes
+      <textarea id="logs" rows="3" placeholder="Add deployment notes…"></textarea>
+    </label>
+
+    <p class="error" id="error"></p>
+
+    <div class="actions">
+      <button type="button" class="secondary" id="cancel">Cancel</button>
+      <button type="submit" class="primary">Save deployment</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/script.js"></script>
+</body>
+</html>
