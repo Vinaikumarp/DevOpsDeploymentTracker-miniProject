@@ -1,5 +1,5 @@
 FROM mysql:8.4
-
+EXPOSE 3306
 ENV MYSQL_DATABASE="deployment_tracker"
 #dont expose passwords here
 COPY schema.sql docker-entrypoint-initdb.d/schema.sql
