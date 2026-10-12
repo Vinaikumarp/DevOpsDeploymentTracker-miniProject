@@ -39,7 +39,6 @@ services:
           cpus: "1.5"
           memory: 1000M
     depends_on:
-      db:
-        condition: service_healthy
+      - db
 volumes:
   tracker_mysql_data:
