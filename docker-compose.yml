@@ -28,6 +28,6 @@ services:
       DB_NAME: deployment_tracker
       TRACKER_API_KEY: ${TRACKER_API_KEY:-local_demo_key_change_me}
     depends_on:
-      - db:
+      - db
 volumes:
   tracker_mysql_data:
