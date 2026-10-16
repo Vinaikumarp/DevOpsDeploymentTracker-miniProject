@@ -10,14 +10,11 @@ services:
     volumes:
       - tracker_mysql_data:/var/lib/mysql
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    deploy:
-      resources:
-        reservations:
-          cpus: "1"
-          memory: 500M
-        limits:
-          cpus: "1.5"
-          memory: 1000M
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
   app:
     image: vinaikumarp/nodejs-frontend:v1
     restart: unless-stopped
@@ -30,15 +27,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-local_tracker_password_change_me}
       DB_NAME: deployment_tracker
       TRACKER_API_KEY: ${TRACKER_API_KEY:-local_demo_key_change_me}
-    deploy:
-      resources:
-        reservations:
-          cpus: "1"
-          memory: 500M
-        limits:
-          cpus: "1.5"
-          memory: 1000M
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 volumes:
   tracker_mysql_data:
